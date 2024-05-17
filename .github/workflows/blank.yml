@@ -1,4 +1,4 @@
-name: CICD forest-admin
+name: CICD blank
 on:
   workflow_dispatch:
     inputs:
