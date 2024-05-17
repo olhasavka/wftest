@@ -1,26 +1,16 @@
-name: Mixed inputs
-
+name: CICD forest-admin
 on:
   workflow_dispatch:
     inputs:
-      name:
-        type: choice
-        description: Who to greet
-        options: 
-        - monalisa
-        - cschleiden
-      message:
-        required: true
-      use-emoji:
-        type: boolean
-        description: Include 🎉🤣 emojis
       environment:
-        type: environment
+        description: "The environment to deploy to"
+        required: true
+        default: "dev"
 
 jobs:
-  greet:
+  development-build:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 5
+    environment: ${{ github.event.inputs.environment }}
     steps:
-    - name: Send greeting
-      run: echo "${{ github.event.inputs.message }} ${{ fromJSON('["", "🥳"]')[github.event.inputs.use-emoji == 'true'] }} ${{ github.event.inputs.name }}"
+      - run: echo "Deploying to ${{ github.event.inputs.environment }} environment"
