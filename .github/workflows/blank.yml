@@ -5,13 +5,14 @@ on:
       environment:
         description: "The environment to deploy to"
         required: true
-        default: "dev"
-        type: choice
-        options: 
-          - dev
-          - tst
-          - uat
-          - prod
+        type: environment
+        #default: "dev"
+        #type: choice
+        #options: 
+        #  - dev
+         # - tst
+         # - uat
+         # - prod
 
 jobs:
   build:
