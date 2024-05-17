@@ -6,6 +6,12 @@ on:
         description: "The environment to deploy to"
         required: true
         default: "dev"
+        type: choise
+        options: 
+          - dev
+          - tst
+          - uat
+          - prod
 
 jobs:
   build:
