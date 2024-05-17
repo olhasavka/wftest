@@ -1,0 +1,82 @@
+name: CICD forest-admin
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "The environment to deploy to"
+        required: true
+        type: environment
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
+  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+  CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+
+permissions:
+  contents: read
+
+jobs:
+  development-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.event.inputs.environment }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+      - name: Retrieve the Amazon ECS task definition
+        run: aws ecs describe-task-definition --task-definition ${{ github.event.inputs.environment }}-forestadmin --query taskDefinition > ${{ github.event.inputs.environment }}-task-definition-raw.json
+      - name: Cleanse the ECS task definition
+        id: cleanse-task-definition
+        run: |
+          jq "{containerDefinitions,family,networkMode,taskRoleArn,executionRoleArn,volumes,placementConstraints,requiresCompatibilities,cpu,memory}" ./${{ github.event.inputs.environment }}-task-definition-raw.json > ./${{ github.event.inputs.environment }}-task-definition.json
+          rm ./${{ github.event.inputs.environment }}-task-definition-raw.json
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: update-container-image
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ github.event.inputs.environment }}-task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+      - name: Dump the resultant ECS task definition (debug only)
+        if: ${{ env.ACT }}
+        run: |
+          cat ./${{ github.event.inputs.environment }}-task-definition.json
+      - name: Stop running task
+        if: ${{ !env.ACT }}
+        run: for taskarn in $(aws ecs list-tasks --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --desired-status RUNNING --output text --query 'taskArns'); do aws ecs stop-task --cluster ${{ env.ECS_CLUSTER }} --task "${taskarn}"; done
+      - name: Deploy Amazon ECS task definition
+        if: ${{ !env.ACT }}
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.update-container-image.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: false
+          force-new-deployment: true
+      - name: Report Status
+        uses: ravsamhq/notify-slack-action@v1
+        if: ${{ !env.ACT }}
+        with:
+          status: ${{ job.status }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
