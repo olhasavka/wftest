@@ -20,4 +20,4 @@ jobs:
     environment: ${{ github.event.inputs.environment }}
     steps:
       - run: echo "Deploying to ${{ github.event.inputs.environment }} environment"
-      - run: echo ${{ env.AWS_ACCESS_SECRET_KEY }}
+      - run: echo ${{ secret.AWS_ACCESS_SECRET_KEY }}
